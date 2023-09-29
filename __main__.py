@@ -1,3 +1,4 @@
+import os
 import struct
 import sys
 import zlib
@@ -50,6 +51,24 @@ class TestQuestions:
         return cls(
             questions=questions
         )
+
+    def export(self, name: str) -> None:
+        dir_name: Path = Path(name[:-4])
+        os.mkdir(dir_name)
+        with open(Path(dir_name / f"Answers_{name}.txt"), "wt") as out_file:
+            picture_number: int = 1
+            for question in self.questions:
+                out_file.write(f"Question -> {question.question}\n")
+                if question.answers[question.right_answer_idx].is_image:
+                    with open(Path(dir_name / f"Picture_{picture_number}.png"), "wb") as picture_file:
+                        picture_file.write(question.answers[question.right_answer_idx].answer)
+                    out_file.write(f"\t Answer -> Picture_{picture_number}\n")
+                    picture_number += 1
+                else:
+                    out_file.write(f"\t Answer -> {question.answers[question.right_answer_idx].answer}\n")
+                out_file.write("\n")
+                out_file.write(f"-----------------------------------------------------------------------------------\n")
+                out_file.write("\n")
 
 
 @dataclass
@@ -113,7 +132,7 @@ class TestAnswer:
     TEXT_ANSWER_STRING_OFFSET: int = 0x52
 
     PICTURE_ANSWER_SIGNATURE: str = "GPO"
-    PICTURE_ANSWER_GAP: int = 0x11
+    PICTURE_ANSWER_GAP: int = 0xD
 
     @classmethod
     def data_to_test_answer(cls, answer_data: bytes) -> "TestAnswer":
@@ -145,8 +164,7 @@ def main(args: list[str]) -> None:
     in_file_path: Path = Path(args[1])
     database: Database = Database.exe_file_to_database(in_file_path)
     test_questions: TestQuestions = TestQuestions.database_to_test_questions(database)
-    print("kek")
-
+    test_questions.export(database.name)
 
 
 if __name__ == '__main__':
