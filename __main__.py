@@ -40,6 +40,8 @@ class TestQuestions:
 
         questions: list["TestQuestion"] = list()
         for idx, offset in enumerate(question_offsets[:-1]):
+            # with open(f"que_{idx}", "wb") as file:
+            #     file.write(database.data[question_offsets[idx]:question_offsets[idx+1]])
             questions.append(
                 TestQuestion.data_to_test_question(database.data[question_offsets[idx]:question_offsets[idx+1]])
             )
@@ -81,7 +83,7 @@ class TestQuestion:
     QUESTION_LENGTH_OFFSET: int = 0xD6
     QUESTION_STRING_OFFSET: int = 0xDA
 
-    RIGHT_ANSWER_INDEX_OFFSET: int = 0x47
+    RIGHT_ANSWER_INDEX_OFFSET: int = 0x48
 
     @classmethod
     def data_to_test_question(cls, question_data: bytes) -> "TestQuestion":
@@ -107,7 +109,7 @@ class TestQuestion:
         answers.append(TestAnswer.data_to_test_answer(question_data[answers_offsets[-1]:]))
 
         right_answer_idx: int = struct.unpack(
-            "<I",
+            ">I",
             question_data[cls.RIGHT_ANSWER_INDEX_OFFSET:cls.RIGHT_ANSWER_INDEX_OFFSET+4]
         )[0]
 
