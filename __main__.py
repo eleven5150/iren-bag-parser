@@ -57,17 +57,19 @@ class TestQuestions:
     def export(self, name: str) -> None:
         dir_name: Path = Path(name[:-4])
         os.mkdir(dir_name)
-        with open(Path(dir_name / f"Answers_{name}.txt"), "wt") as out_file:
+        images_dir: Path = Path(dir_name / "images")
+        os.mkdir(images_dir)
+        with open(Path(dir_name / f"Answers_{dir_name}.md"), "wt") as out_file:
             picture_number: int = 1
             for question in self.questions:
-                out_file.write(f"Question -> {question.question}\n")
+                out_file.write(f"**{question.question}**\n\n")
                 if question.answers[question.right_answer_idx].is_image:
-                    with open(Path(dir_name / f"Picture_{picture_number}.png"), "wb") as picture_file:
+                    with open(Path(images_dir / f"Picture_{picture_number}.png"), "wb") as picture_file:
                         picture_file.write(question.answers[question.right_answer_idx].answer)
-                    out_file.write(f"\t Answer -> Picture_{picture_number}\n")
+                    out_file.write(f"![](images/Picture_{picture_number}.png)\n")
                     picture_number += 1
                 else:
-                    out_file.write(f"\t Answer -> {question.answers[question.right_answer_idx].answer}\n")
+                    out_file.write(f">{question.answers[question.right_answer_idx].answer}\n")
                 out_file.write("\n")
                 out_file.write(f"-----------------------------------------------------------------------------------\n")
                 out_file.write("\n")
@@ -94,6 +96,8 @@ class TestQuestion:
 
         question_bytes: bytes = question_data[cls.QUESTION_STRING_OFFSET:cls.QUESTION_STRING_OFFSET+question_length]
         question: str = str(question_bytes, encoding="cp1251")
+        if question[-1] == ' ':
+            question = question[:-1]
 
         signature_length: int = len(TestAnswer.SIGNATURE)
         idx: int = question_data.find(TestAnswer.SIGNATURE)
