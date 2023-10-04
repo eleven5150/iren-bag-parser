@@ -6,6 +6,8 @@ import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
+from md2pdf import md2pdf
+
 BAG_SIGNATURE: bytes = b"\x42\x41\x47\x1A"
 
 
@@ -50,8 +52,6 @@ class TestQuestions:
 
         questions: list["TestQuestion"] = list()
         for idx, offset in enumerate(question_offsets[:-1]):
-            # with open(f"que_{idx}", "wb") as file:
-            #     file.write(database.data[question_offsets[idx]:question_offsets[idx+1]])
             questions.append(
                 TestQuestion.data_to_test_question(database.data[question_offsets[idx]:question_offsets[idx+1]])
             )
@@ -64,12 +64,12 @@ class TestQuestions:
             questions=questions
         )
 
-    def export(self, name: str) -> None:
+    def export_md(self, name: str) -> Path:
         dir_name: Path = Path(name[:-4])
         os.mkdir(dir_name)
         images_dir: Path = Path(dir_name / "images")
         os.mkdir(images_dir)
-        with open(Path(dir_name / f"Answers_{dir_name}.md"), "wt") as out_file:
+        with open(Path(dir_name / f"Answers_{dir_name}.md"), "wt", encoding="utf-8") as out_file:
             picture_number: int = 1
             for question in self.questions:
                 for q_item in question.question:
@@ -91,6 +91,19 @@ class TestQuestions:
                 out_file.write("\n")
                 out_file.write(f"-----------------------------------------------------------------------------------\n")
                 out_file.write("\n")
+
+        return Path(dir_name / f"Answers_{dir_name}.md")
+
+    @staticmethod
+    def export_pdf(md_file_path: Path) -> None:
+        md_images_base: Path = md_file_path.parent
+        md2pdf(
+            Path(md_file_path.parent / f"{md_file_path.stem}.pdf"),
+            md_content=None,
+            md_file_path=md_file_path,
+            css_file_path=None,
+            base_url=os.path.abspath(md_images_base)
+               )
 
 
 @dataclass
@@ -242,7 +255,8 @@ def main(args: list[str]) -> None:
     in_file_path: Path = Path(args[1])
     database: Database = Database.exe_file_to_database(in_file_path)
     test_questions: TestQuestions = TestQuestions.database_to_test_questions(database)
-    test_questions.export(database.name)
+    md_file_path: Path = test_questions.export_md(database.name)
+    test_questions.export_pdf(md_file_path)
 
 
 if __name__ == '__main__':
