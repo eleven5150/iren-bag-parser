@@ -9,6 +9,11 @@ from pathlib import Path
 BAG_SIGNATURE: bytes = b"\x42\x41\x47\x1A"
 
 
+def save_picture(path: Path, data: bytes, number: int) -> None:
+    with open(Path(path / f"Picture_{number}.png"), "wb") as picture_file:
+        picture_file.write(data)
+
+
 @dataclass
 class Database:
     name: str
@@ -67,14 +72,22 @@ class TestQuestions:
         with open(Path(dir_name / f"Answers_{dir_name}.md"), "wt") as out_file:
             picture_number: int = 1
             for question in self.questions:
-                out_file.write(f"**{question.question}**\n\n")
-                if question.answers[question.right_answer_idx].is_image:
-                    with open(Path(images_dir / f"Picture_{picture_number}.png"), "wb") as picture_file:
-                        picture_file.write(question.answers[question.right_answer_idx].answer)
-                    out_file.write(f"![](images/Picture_{picture_number}.png)\n")
-                    picture_number += 1
-                else:
-                    out_file.write(f">{question.answers[question.right_answer_idx].answer}\n")
+                for q_item in question.question:
+                    if q_item.type == ItemType.TEXT:
+                        out_file.write(f"**{q_item.data}**\n")
+                    elif q_item.type == ItemType.PICTURE:
+                        save_picture(images_dir, q_item.data, picture_number)
+                        out_file.write(f"![](images/Picture_{picture_number}.png)\n")
+                        picture_number += 1
+
+                for a_item in question.answers[question.right_answer_idx].answer:
+                    if a_item.type == ItemType.TEXT:
+                        out_file.write(f">{a_item.data}\n")
+                    elif a_item.type == ItemType.PICTURE:
+                        save_picture(images_dir, a_item.data, picture_number)
+                        out_file.write(f">![](images/Picture_{picture_number}.png)\n")
+                        picture_number += 1
+
                 out_file.write("\n")
                 out_file.write(f"-----------------------------------------------------------------------------------\n")
                 out_file.write("\n")
@@ -175,7 +188,7 @@ class Item:
     TEXT_LENGTH_OFFSET: int = 0x17
     TEXT_DATA_OFFSET: int = 0x1B
 
-    PICTURE_START_OFFSET: int = 0x1F
+    PICTURE_START_OFFSET: int = 0x28
     PICTURE_END_SIGNATURE: bytes = b"\x49\x45\x4E\x44"
 
     @classmethod
@@ -194,8 +207,12 @@ class Item:
             text_bytes: bytes = data[cls.TEXT_DATA_OFFSET:cls.TEXT_DATA_OFFSET + text_length]
 
             text: str = str(text_bytes, encoding="cp1251")
-            if text[-1] == ' ':
-                text = text[:-1]
+            text = text.strip()
+
+            if text[0] == ">":
+                list_text = list(text)
+                list_text.insert(0, "\\")
+                text = "".join(list_text)
 
             return cls(
                 data=text,
