@@ -1,9 +1,12 @@
+import enum
 import os
 import struct
 import sys
 import zlib
 from dataclasses import dataclass
 from pathlib import Path
+
+BAG_SIGNATURE: bytes = b"\x42\x41\x47\x1A"
 
 
 @dataclass
@@ -29,14 +32,16 @@ class Database:
 class TestQuestions:
     questions: list["TestQuestion"]
 
+    QUESTION_SIGNATURE: bytes = b"\x42\x41\x47\x1A\x0C\x00\x00\x00\x54\x65\x73\x74\x51\x75\x65\x73\x74\x69\x6F\x6E"
+
     @classmethod
     def database_to_test_questions(cls, database: Database) -> "TestQuestions":
-        signature_len: int = len(TestQuestion.SIGNATURE)
-        idx: int = database.data.find(TestQuestion.SIGNATURE)
+        signature_len: int = len(cls.QUESTION_SIGNATURE)
+        idx: int = database.data.find(cls.QUESTION_SIGNATURE)
         question_offsets: list[int] = list()
         while idx != -1:
             question_offsets.append(idx)
-            idx = database.data.find(TestQuestion.SIGNATURE, idx + signature_len)
+            idx = database.data.find(cls.QUESTION_SIGNATURE, idx + signature_len)
 
         questions: list["TestQuestion"] = list()
         for idx, offset in enumerate(question_offsets[:-1]):
@@ -77,45 +82,46 @@ class TestQuestions:
 
 @dataclass
 class TestQuestion:
-    question: str
+    question: list["Item"]
     answers: list["TestAnswer"]
     right_answer_idx: int
 
-    SIGNATURE: bytes = b"\x42\x41\x47\x1A\x0C\x00\x00\x00\x54\x65\x73\x74\x51\x75\x65\x73\x74\x69\x6F\x6E"
-    QUESTION_LENGTH_OFFSET: int = 0xD6
-    QUESTION_STRING_OFFSET: int = 0xDA
+    ANSWER_SIGNATURE: bytes = b"\x42\x41\x47\x1A\x0A\x00\x00\x00\x54\x65\x73\x74\x41\x6E\x73\x77\x65\x72"
+
+    NUM_OF_ITEMS_OFFSET: int = 0xBB
+    FIRST_ITEM_OFFSET: int = 0xBF
 
     RIGHT_ANSWER_INDEX_OFFSET: int = 0x48
 
     @classmethod
     def data_to_test_question(cls, question_data: bytes) -> "TestQuestion":
-        question_length: int = struct.unpack(
-            "<I",
-            question_data[cls.QUESTION_LENGTH_OFFSET:cls.QUESTION_LENGTH_OFFSET+4]
+        right_answer_idx: int = struct.unpack(
+            ">I",
+            question_data[cls.RIGHT_ANSWER_INDEX_OFFSET:cls.RIGHT_ANSWER_INDEX_OFFSET+4]
         )[0]
 
-        question_bytes: bytes = question_data[cls.QUESTION_STRING_OFFSET:cls.QUESTION_STRING_OFFSET+question_length]
-        question: str = str(question_bytes, encoding="cp1251")
-        if question[-1] == ' ':
-            question = question[:-1]
+        num_of_items: int = struct.unpack(
+            "<B",
+            question_data[cls.NUM_OF_ITEMS_OFFSET:cls.NUM_OF_ITEMS_OFFSET + 1]
+        )[0]
+        curr_item_offset: int = cls.FIRST_ITEM_OFFSET
+        question: list["Item"] = list()
+        for idx in range(num_of_items):
+            question.append(Item.data_to_item(question_data[curr_item_offset:]))
+            curr_item_offset = question_data.find(BAG_SIGNATURE, curr_item_offset + len(BAG_SIGNATURE))
 
-        signature_length: int = len(TestAnswer.SIGNATURE)
-        idx: int = question_data.find(TestAnswer.SIGNATURE)
+        answer_signature_length: int = len(cls.ANSWER_SIGNATURE)
+        idx: int = question_data.find(cls.ANSWER_SIGNATURE)
         answers_offsets: list[idx] = list()
         while idx != -1:
             answers_offsets.append(idx)
-            idx = question_data.find(TestAnswer.SIGNATURE, idx + signature_length)
+            idx = question_data.find(cls.ANSWER_SIGNATURE, idx + answer_signature_length)
 
         answers: list["TestAnswer"] = list()
         for idx, offset in enumerate(answers_offsets[:-1]):
             answers.append(TestAnswer.data_to_test_answer(question_data[answers_offsets[idx]:answers_offsets[idx + 1]]))
 
         answers.append(TestAnswer.data_to_test_answer(question_data[answers_offsets[-1]:]))
-
-        right_answer_idx: int = struct.unpack(
-            ">I",
-            question_data[cls.RIGHT_ANSWER_INDEX_OFFSET:cls.RIGHT_ANSWER_INDEX_OFFSET+4]
-        )[0]
 
         return cls(
             question=question,
@@ -126,44 +132,93 @@ class TestQuestion:
 
 @dataclass
 class TestAnswer:
-    answer: str | bytes
-    is_image: bool
+    answer: list["Item"]
 
-    SIGNATURE: bytes = b"\x42\x41\x47\x1A\x0A\x00\x00\x00\x54\x65\x73\x74\x41\x6E\x73\x77\x65\x72"
-
-    ANSWER_TYPE_OFFSET: int = 0x3F
-    ANSWER_LENGTH_OFFSET: int = 0x4E
-
-    TEXT_ANSWER_SIGNATURE: str = "TPO"
-    TEXT_ANSWER_STRING_OFFSET: int = 0x52
-
-    PICTURE_ANSWER_SIGNATURE: str = "GPO"
-    PICTURE_ANSWER_GAP: int = 0xD
+    NUM_OF_ITEMS_OFFSET: int = 0x33
+    FIRST_ITEM_OFFSET: int = 0x37
 
     @classmethod
     def data_to_test_answer(cls, answer_data: bytes) -> "TestAnswer":
-
-        answer_type: str = str(answer_data[cls.ANSWER_TYPE_OFFSET:cls.ANSWER_TYPE_OFFSET+3], encoding="ascii")
-
-        answer_length: int = struct.unpack(
-            "<H",
-            answer_data[cls.ANSWER_LENGTH_OFFSET:cls.ANSWER_LENGTH_OFFSET + 2]
+        num_of_items: int = struct.unpack(
+            "<B",
+            answer_data[cls.NUM_OF_ITEMS_OFFSET:cls.NUM_OF_ITEMS_OFFSET + 1]
         )[0]
-        answer_bytes: bytes = answer_data[cls.TEXT_ANSWER_STRING_OFFSET:cls.TEXT_ANSWER_STRING_OFFSET + answer_length]
-
-        if answer_type == cls.TEXT_ANSWER_SIGNATURE:
-            is_image: bool = False
-            answer: str = str(answer_bytes, encoding="cp1251")
-        elif answer_type == cls.PICTURE_ANSWER_SIGNATURE:
-            is_image: bool = True
-            answer: bytes = answer_bytes[cls.PICTURE_ANSWER_GAP:]
-        else:
-            raise ValueError(f"Unknown answer type {answer_type}")
+        curr_item_offset: int = cls.FIRST_ITEM_OFFSET
+        answer: list["Item"] = list()
+        for idx in range(num_of_items):
+            answer.append(Item.data_to_item(answer_data[curr_item_offset:]))
+            curr_item_offset = answer_data.find(BAG_SIGNATURE, curr_item_offset + len(BAG_SIGNATURE))
 
         return cls(
-            answer=answer,
-            is_image=is_image
+            answer=answer
         )
+
+
+class ItemType(enum.Enum):
+    TEXT: int = 0
+    PICTURE: int = 1
+    EMPTY: int = 2
+
+
+class ItemTypeString(enum.Enum):
+    TEXT: str = "TPO"
+    PICTURE: str = "GPO"
+    EMPTY: str = "LPO"
+
+
+@dataclass
+class Item:
+    data: str | bytes
+    type: int
+
+    TYPE_OFFSET: int = 0x8
+    TEXT_LENGTH_OFFSET: int = 0x17
+    TEXT_DATA_OFFSET: int = 0x1B
+
+    PICTURE_START_OFFSET: int = 0x1F
+    PICTURE_END_SIGNATURE: bytes = b"\x49\x45\x4E\x44"
+
+    @classmethod
+    def data_to_item(cls, data: bytes) -> "Item":
+        curr_item_type_str: str = str(
+            data[cls.TYPE_OFFSET:cls.TYPE_OFFSET + 3],
+            encoding="ascii"
+        )
+
+        if curr_item_type_str == ItemTypeString.TEXT.value:
+            text_length: int = struct.unpack(
+                "<I",
+                data[cls.TEXT_LENGTH_OFFSET:cls.TEXT_LENGTH_OFFSET + 4]
+            )[0]
+
+            text_bytes: bytes = data[cls.TEXT_DATA_OFFSET:cls.TEXT_DATA_OFFSET + text_length]
+
+            text: str = str(text_bytes, encoding="cp1251")
+            if text[-1] == ' ':
+                text = text[:-1]
+
+            return cls(
+                data=text,
+                type=ItemType.TEXT
+            )
+        elif curr_item_type_str == ItemTypeString.PICTURE.value:
+            iend_offset: int = data.find(cls.PICTURE_END_SIGNATURE)
+            picture_len: int = iend_offset + 8 - cls.PICTURE_START_OFFSET
+
+            picture_bytes: bytes = data[cls.PICTURE_START_OFFSET:cls.PICTURE_START_OFFSET+picture_len]
+
+            return cls(
+                data=picture_bytes,
+                type=ItemType.PICTURE
+            )
+        elif curr_item_type_str == ItemTypeString.EMPTY.value:
+
+            return cls(
+                data="",
+                type=ItemType.EMPTY
+            )
+        else:
+            raise ValueError(f"Unknown item type {curr_item_type_str}")
 
 
 def main(args: list[str]) -> None:
